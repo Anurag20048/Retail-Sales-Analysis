@@ -1,125 +1,95 @@
-import pandas as pd
+from pathlib import Path
+
 import matplotlib.pyplot as plt
-from unicodedata import category
-
-# Load dataset
-df = pd.read_csv(
-    "C:/Users/ANURAG PAREEK/Downloads/archive (4)/Sample - Superstore.csv",
-    encoding='latin1'
-)
-
-# Preview data
-print("First 5 rows:\n", df.head())
-
-# Data info
-print("\nData Info:")
-print(df.info())
-
-# Statistical summary
-print("\nSummary Statistics:\n", df.describe())
-
-# Check missing values
-print("\nMissing Values:\n", df.isnull().sum())
-
-# Column names
-print("\nColumns:\n", df.columns)
-
-# Remove duplicates
-df.drop_duplicates(inplace=True)
-
-# Convert date columns
-df['Order Date'] = pd.to_datetime(df['Order Date'])
-df['Ship Date'] = pd.to_datetime(df['Ship Date'])
-
-# Check if any Ship Date is missing
-print("\nMissing Ship Dates:\n", df[df['Ship Date'].isnull()])
-
-# Create new features
-df['year'] = df['Order Date'].dt.year
-df['month'] = df['Order Date'].dt.month
-
-# Group data (Year + Month)
-monthly_sales = df.groupby(['year', 'month'])['Sales'].sum().reset_index()
-
-print("\nMonthly Sales Data:\n", monthly_sales.head())
-# Create proper time series
-df['YearMonth'] = df['Order Date'].dt.to_period('M')
-
-monthly_sales = df.groupby('YearMonth')['Sales'].sum()
-monthly_sales.index = monthly_sales.index.to_timestamp()
-
-# Plot clean graph
-plt.figure(figsize=(12,5))
-plt.plot(monthly_sales.index, monthly_sales.values)
-
-plt.title('Monthly Sales Trend')
-plt.xlabel('Date')
-plt.ylabel('Sales')
-
-plt.xticks(rotation=45)
-plt.grid()
-
-plt.show()
+import pandas as pd
 import seaborn as sns
-# Group data by Category
-Category_analysis=df.groupby('Category')[['Sales','Profit']].sum().reset_index()
-#plot sales by category
-plt.figure(figsize=(8,5))
-sns.barplot(x='Category',y='Sales',data=Category_analysis)
-plt.title('Category Sales')
-plt.xlabel('Category')
-plt.ylabel(' total Sales')
-plt.xticks(rotation=45)
-plt.show()
-plt.figure(figsize=(8,5))
-sns.barplot(x='Category',y='Profit',data=Category_analysis)
-plt.title('Category Profit')
-plt.xlabel('Category')
-plt.ylabel('Profit')
-plt.xticks(rotation=45)
-plt.show()
-sub_category =df.groupby('Sub-Category')[['Sales','Profit']].sum().reset_index()
-sub_category_sorted=sub_category.sort_values(by=['Profit'])
-print(sub_category_sorted)
-plt.figure(figsize=(8,5))
-sns.barplot(x='Profit', y='Sub-Category', data=sub_category_sorted)
-plt.title('profit by sub-category')
-plt.xlabel('profit')
-plt.ylabel('sub-category')
-plt.xticks(rotation=45)
-plt.show()
-plt.figure(figsize=(8,5))
 
-sns.scatterplot(
-    x='Discount',
-    y='Profit',
-    hue='Category',
-    data=df
-)
+BASE_DIR = Path(__file__).resolve().parent
+DATA_PATH = BASE_DIR / "Sample - Superstore.csv"
 
-plt.title("Discount vs Profit by Category")
-plt.show()
-top_customers=df.groupby('Customer Name')['Sales'].sum().sort_values(ascending=False).head(10)
-top_customers.plot(kind='bar',figsize=(8,5))
-plt.title('Top 10 Customers by Sales')
-plt.xlabel('Customer Name')
-plt.ylabel('Sales')
-plt.xticks(rotation=45)
-plt.show()
-import datetime as dt
-today =df['Order Date'].max()
-rfm=df.groupby('Customer Name').agg({'Order Date':lambda x:(today-x.max()).days,'Order ID':'count','Sales':'sum'})
-rfm.columns=['Recency','Frequency','Monetary']
-print(rfm.head())
-def segment_customer(row):
-    if row ['Monetary']>5000 and row['Frequency'] > 5:
-        return 'High value'
-    elif row ['Monetary']<2000:
-        return 'medium value'
-    else:
-        return 'low value'
-rfm['Segment']=rfm.apply(segment_customer, axis=1)
-print(rfm.head())
-sns.countplot(x='Segment',data=rfm)
-plt.title("customer Segment")
-plt.show()
+def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
+    if not path.exists():
+        raise FileNotFoundError(f"Dataset not found: {path}")
+    df = pd.read_csv(path, encoding="latin1").drop_duplicates().copy()
+    df["Order Date"] = pd.to_datetime(df["Order Date"])
+    df["Ship Date"] = pd.to_datetime(df["Ship Date"])
+    df["Year"] = df["Order Date"].dt.year
+    df["Month"] = df["Order Date"].dt.month
+    df["YearMonth"] = df["Order Date"].dt.to_period("M").dt.to_timestamp()
+    return df
+
+def monthly_sales(df):
+    return df.groupby("YearMonth")["Sales"].sum().sort_index()
+
+def category_analysis(df):
+    return df.groupby("Category")[["Sales", "Profit"]].sum().sort_values("Profit", ascending=False).reset_index()
+
+def subcategory_analysis(df):
+    return df.groupby("Sub-Category")[["Sales", "Profit"]].sum().sort_values("Profit").reset_index()
+
+def customer_rfm(df):
+    today = df["Order Date"].max()
+    rfm = df.groupby("Customer Name").agg(
+        Recency=("Order Date", lambda x: (today - x.max()).days),
+        Frequency=("Order ID", "count"),
+        Monetary=("Sales", "sum"),
+    )
+    def segment(row):
+        if row["Monetary"] > 5000 and row["Frequency"] > 5:
+            return "High Value"
+        if row["Monetary"] < 2000:
+            return "Medium Value"
+        return "Low Value"
+    rfm["Segment"] = rfm.apply(segment, axis=1)
+    return rfm.reset_index()
+
+def create_charts(df, output_dir=BASE_DIR / "outputs"):
+    output_dir.mkdir(parents=True, exist_ok=True)
+    sns.set_theme(style="whitegrid")
+    series = monthly_sales(df)
+    plt.figure(figsize=(12, 5))
+    plt.plot(series.index, series.values)
+    plt.title("Monthly Sales Trend")
+    plt.xlabel("Date")
+    plt.ylabel("Sales")
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig(output_dir / "monthly_sales_trend.png", dpi=150)
+    plt.close()
+    cat = category_analysis(df)
+    for metric, filename, title in [
+        ("Sales", "sales_by_category.png", "Sales by Category"),
+        ("Profit", "profit_by_category.png", "Profit by Category"),
+    ]:
+        plt.figure(figsize=(8, 5))
+        sns.barplot(data=cat, x="Category", y=metric)
+        plt.title(title)
+        plt.tight_layout()
+        plt.savefig(output_dir / filename, dpi=150)
+        plt.close()
+    sub = subcategory_analysis(df)
+    plt.figure(figsize=(9, 6))
+    sns.barplot(data=sub, x="Profit", y="Sub-Category")
+    plt.title("Profit by Sub-Category")
+    plt.tight_layout()
+    plt.savefig(output_dir / "profit_by_subcategory.png", dpi=150)
+    plt.close()
+    plt.figure(figsize=(9, 6))
+    sns.scatterplot(data=df, x="Discount", y="Profit", hue="Category")
+    plt.title("Discount vs Profit by Category")
+    plt.tight_layout()
+    plt.savefig(output_dir / "discount_vs_profit.png", dpi=150)
+    plt.close()
+
+def main():
+    df = load_data()
+    print("Rows:", f"{len(df):,}")
+    print("Total sales:", f"$"+f"{df['Sales'].sum():,.2f}")
+    print("Total profit:", f"$"+f"{df['Profit'].sum():,.2f}")
+    print("Average discount:", f"{df['Discount'].mean():.2%}")
+    print(category_analysis(df).to_string(index=False))
+    print(customer_rfm(df)["Segment"].value_counts().to_string())
+    create_charts(df)
+
+if __name__ == "__main__":
+    main()
